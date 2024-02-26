@@ -262,10 +262,16 @@ class Linear(nn.Linear, LoraLayer):
             # flag to True.
             
             ### YOUR CODE HERE ###
-            self.weight.data += None
+            self.weight.data += (
+                transpose(
+                    self.lora_B[self.active_adapter].weight @ self.lora_A[self.active_adapter].weight,
+                    self.fan_in_fan_out,
+                )
+                * self.scaling[self.active_adapter]
+            )
             
             ### YOUR CODE HERE ###
-            self.merged = None
+            self.merged = True
 
     def unmerge(self):
         # Separate low-rank approximation from original weights
@@ -302,7 +308,12 @@ class Linear(nn.Linear, LoraLayer):
             # LoRA scaling factor and added to the result.
             
             ### YOUR CODE HERE ###
-            result += None
+            # lora_A (in_features, r)
+            # lora_B (r, out_features)
+            after_A = x @ self.lora_A[self.active_adapter].weight.T
+            after_dropout = self.lora_dropout[self.active_adapter](after_A)
+            out = after_dropout @ self.lora_B[self.active_adapter].weight.T
+            result += out
         
         else:
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)

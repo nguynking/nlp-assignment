@@ -74,13 +74,13 @@ class Trainer:
         if mixed_precision_dtype is None:
             
             # If 'mixed_precision_dtype' is None, use 'nullcontext',
-            self.ctx = None
+            self.ctx = nullcontext()
 
         else:
         
             # TODO Otherwise, use 'torch.amp.autocast' context with the specified dtype, and initialize GradScaler if mixed_precision_dtype is float16.
-            self.ctx = None
-            self.gradscaler = None
+            self.ctx = torch.amp.autocast(device_type='cuda', dtype=mixed_precision_dtype)
+            self.gradscaler = torch.cuda.amp.GradScaler()
 
     def _set_ddp_training(self):
 
@@ -89,8 +89,9 @@ class Trainer:
         # and output device for the data parallelism.
 
         ### YOUR CODE HERE ###
-
-        self.model = None
+        ddp_local_rank = int(os.environ['LOCAL_RANK'])
+        if self.is_ddp_training:
+            self.model = DDP(self.model, device_ids=[ddp_local_rank])
 
     def _run_batch(self, batch):
         """
@@ -112,8 +113,8 @@ class Trainer:
         if self.mixed_precision_dtype == torch.float16:
 
             ### YOUR CODE HERE ###
-            
-            pass
+            self.gradscaler.scale(loss).backward()
+
         else:
             loss.backward()
 
@@ -159,15 +160,16 @@ class Trainer:
                     ### YOUR CODE HERE ###
                     
                     # TODO: optimizer step
-
+                    self.gradscaler.step(self.optimizer)
                     # TODO: update scaler factor
+                    self.gradscaler.update()
 
-                    pass
                 else:
                     self.optimizer.step()
                 self.optimizer.zero_grad()
 
                 torch.cuda.empty_cache()
+        print(f'Length train_dataloader: {len(train_dataloader)}')
         epoch_loss /= (len(train_dataloader) /
                        self.gradient_accumulation_steps)
         return epoch_loss
@@ -198,7 +200,20 @@ class Trainer:
 
         ### YOUR CODE HERE ###
 
-        data_trainloader = None
+        train_sampler = DistributedSampler(train_dataset) if self.is_ddp_training else None
+        collate_fn = DataCollatorForSeq2Seq(
+            tokenizer=self.tokenizer,
+            pad_to_multiple_of=8,
+            return_tensors='pt'
+        )
+
+        data_trainloader = DataLoader(
+            dataset=train_dataset,
+            batch_size=16,
+            sampler=train_sampler,
+            collate_fn=collate_fn,
+            drop_last=True
+        )
 
         # TODO: Prepare the evaluation DataLoader. Initialize 'DataLoader' with 'eval_dataset',
         # the appropriate 'batch_size', and 'SequentialSampler' for 'sampler'.
@@ -206,8 +221,20 @@ class Trainer:
         # Also add drop_last to True.
 
         ### YOUR CODE HERE ###
+        eval_sampler = SequentialSampler(eval_dataset)
+        collate_fn = DataCollatorForSeq2Seq(
+            tokenizer=self.tokenizer,
+            pad_to_multiple_of=8,
+            return_tensors='pt'
+        )
 
-        data_testloader = None
+        data_testloader = DataLoader(
+            dataset=eval_dataset,
+            batch_size=16,
+            sampler=eval_sampler,
+            collate_fn=collate_fn,
+            drop_last=True
+        )
 
         return data_trainloader, data_testloader
 
@@ -312,20 +339,25 @@ def load_pretrained_model(local_rank, model_path: str = ""):
     # and trust_remote_code=True.
 
     ### YOUR CODE HERE ###
-
-    model = None 
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, device_map={"": torch.device(f"cuda:{local_rank}")})
 
     # TODO: Create a LoraConfig with the parameters: 
     # r=4, lora_alpha=8, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM", target_modules=['lm_head.linear', 'transformer.embd.wte'].
     # We will then use the config to initialize a LoraModelForCasualLM with the loaded model.
 
     ### YOUR CODE HERE ###
-
-    lora_config = None 
+    lora_config = LoraConfig(
+        r=4,
+        lora_alpha=8,
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM",
+        target_modules=['lm_head.linear', 'transformer.embd.wte']
+    )
 
     # TODO: Create LoRA model
 
-    model = None  # Apply current model to Lora Model
+    model = LoraModelForCasualLM(model, lora_config)  # Apply current model to Lora Model
 
     if _is_master_process():
         model.print_trainable_parameters()
