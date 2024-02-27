@@ -91,7 +91,7 @@ class Trainer:
         ### YOUR CODE HERE ###
         ddp_local_rank = int(os.environ['LOCAL_RANK'])
         if self.is_ddp_training:
-            self.model = DDP(self.model, device_ids=[ddp_local_rank])
+            self.model = DDP(self.model, device_ids=[ddp_local_rank], output_device=ddp_local_rank)
 
     def _run_batch(self, batch):
         """
@@ -209,7 +209,7 @@ class Trainer:
 
         data_trainloader = DataLoader(
             dataset=train_dataset,
-            batch_size=16,
+            batch_size=4,
             sampler=train_sampler,
             collate_fn=collate_fn,
             drop_last=True
@@ -230,7 +230,7 @@ class Trainer:
 
         data_testloader = DataLoader(
             dataset=eval_dataset,
-            batch_size=16,
+            batch_size=4,
             sampler=eval_sampler,
             collate_fn=collate_fn,
             drop_last=True
@@ -259,7 +259,7 @@ class Trainer:
         avg_loss = avg_loss/(len(eval_dataloader))
         return avg_loss
 
-    def run(self, data_path: str, size_valid_set: int = 0.25, seed: int = 123):
+    def run(self, data_path: str, size_valid_set: float = 0.25, seed: int = 123):
         """
         Run the training process.
 
@@ -396,12 +396,10 @@ if __name__ == "__main__":
 
         # TODO: Initialize the process group for distributed data parallelism with nccl backend.
         # After that, you should set the 'local_rank' from the environment variable 'LOCAL_RANK'.
-
         # Initialize the process group
-
         ### YOUR CODE HERE ###
-        
-        pass
+        init_process_group(backend=backend)
+        local_rank = int(os.environ['LOCAL_RANK'])
     else:
         os.environ['RANK'] = '0'
         local_rank = 0

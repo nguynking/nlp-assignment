@@ -19,8 +19,8 @@
   "rank_pattern": {},
   "revision": null,
   "target_modules": [
-    "transformer.embd.wte",
-    "lm_head.linear"
+    "lm_head.linear",
+    "transformer.embd.wte"
   ],
   "task_type": "CAUSAL_LM",
   "use_rslora": false
